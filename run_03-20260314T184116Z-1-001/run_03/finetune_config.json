@@ -1,0 +1,9 @@
+{
+  "base_checkpoint": "run_02",
+  "fine_tune_dataset": "tatsu-lab/alpaca",
+  "fine_tune_samples": 52000,
+  "epochs": 3,
+  "learning_rate": 5e-05,
+  "best_val_loss": 4.071520431836446,
+  "prompt_format": "### Instruction:\n{instruction}\n\n### Response:\n{output}"
+}

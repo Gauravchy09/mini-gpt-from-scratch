@@ -12,7 +12,7 @@ from models.gpt_model import GPTConfig, MiniGPT
 from utils.device import get_device
 
 ROOT_DIR = Path(__file__).resolve().parent
-PREFERRED_EXPORT_NAMES = ["run_02", "run_01"]
+PREFERRED_EXPORT_NAMES = ["run_03", "run_02", "run_01"]
 
 DEFAULT_MAX_NEW_TOKENS = 100
 DEFAULT_TEMPERATURE = 0.9
@@ -49,9 +49,31 @@ def find_artifact_dirs() -> list[Path]:
             unique.append(item)
             seen.add(key)
 
-    # Prefer run_02 when available, then the rest.
-    unique.sort(key=lambda path: (0 if path.name == "run_02" else 1, str(path)), reverse=False)
+    # Prefer run_03, then run_02, then run_01 when available.
+    priority = {name: index for index, name in enumerate(PREFERRED_EXPORT_NAMES)}
+    unique.sort(key=lambda path: (priority.get(path.name, len(priority)), str(path)), reverse=False)
     return unique
+
+
+@st.cache_data(show_spinner=False)
+def get_model_summary(export_dir: str) -> dict[str, Any]:
+    config_path = Path(export_dir) / "mini_gpt_config.json"
+    with config_path.open("r", encoding="utf-8") as file:
+        model_cfg = json.load(file)
+
+    config = GPTConfig(**model_cfg)
+    param_count = sum(param.numel() for param in MiniGPT(config).parameters())
+    return {
+        "param_count": param_count,
+    }
+
+
+def format_param_count(param_count: int) -> str:
+    if param_count >= 1_000_000:
+        return f"~{param_count / 1_000_000:.1f}M"
+    if param_count >= 1_000:
+        return f"~{param_count / 1_000:.1f}K"
+    return str(param_count)
 
 
 def remap_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -169,9 +191,13 @@ def render_sidebar(artifact_dirs: list[Path]) -> tuple[str, str, int, float, int
         return "", "cpu", DEFAULT_MAX_NEW_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TOP_K, DEFAULT_TOP_P, DEFAULT_REPETITION_PENALTY
 
     preferred_index = 0
-    for idx, path_str in enumerate(choices):
-        if path_str.replace("\\", "/").endswith("/run_02"):
-            preferred_index = idx
+    for preferred_name in PREFERRED_EXPORT_NAMES:
+        match_index = next(
+            (idx for idx, path_str in enumerate(choices) if path_str.replace("\\", "/").endswith(f"/{preferred_name}")),
+            None,
+        )
+        if match_index is not None:
+            preferred_index = match_index
             break
     export_dir = st.sidebar.selectbox("Trained Model Folder", choices, index=preferred_index)
 
@@ -186,8 +212,35 @@ def render_sidebar(artifact_dirs: list[Path]) -> tuple[str, str, int, float, int
 
 def main() -> None:
     st.set_page_config(page_title="Mini-GPT Demo", page_icon="GPT", layout="wide")
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            max-width: 1100px;
+            padding-top: 1.2rem;
+            padding-bottom: 1.2rem;
+        }
+        .model-pill {
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            border-radius: 14px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 0.8rem;
+            background: rgba(255, 255, 255, 0.03);
+        }
+        @media (max-width: 900px) {
+            .block-container {
+                padding-top: 0.8rem;
+                padding-left: 0.8rem;
+                padding-right: 0.8rem;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("Mini-GPT Streamlit Demo")
-    st.caption("Simple frontend for prompt-based text generation using your trained run_02 export.")
+    st.caption("Simple frontend for prompt-based text generation using your trained run exports.")
 
     artifact_dirs = find_artifact_dirs()
     if not artifact_dirs:
@@ -198,52 +251,50 @@ def main() -> None:
 
     export_dir, device_name, max_new_tokens, temperature, top_k, top_p, repetition_penalty = render_sidebar(artifact_dirs)
 
-    col1, col2 = st.columns([3, 2])
-    with col1:
-        prompt = st.text_area(
-            "Prompt",
-            value="When the astronaut landed on Mars, she discovered",
-            height=160,
-        )
-        generate_clicked = st.button("Generate Text", type="primary", use_container_width=True)
+    model_folder_name = Path(export_dir).name if export_dir else "N/A"
+    model_params_text = "~20M"
+    if export_dir:
+        try:
+            summary = get_model_summary(export_dir)
+            model_params_text = format_param_count(summary["param_count"])
+        except Exception:
+            model_params_text = "~20M"
 
-        if generate_clicked:
-            if not export_dir:
-                st.warning("Select a trained model folder from the sidebar.")
-            elif not prompt.strip():
-                st.warning("Enter a prompt before generating text.")
-            else:
-                with st.spinner("Generating text..."):
-                    generated = generate_text(
-                        prompt=prompt,
-                        export_dir=export_dir,
-                        max_new_tokens=max_new_tokens,
-                        temperature=temperature,
-                        top_k=top_k,
-                        top_p=top_p,
-                        repetition_penalty=repetition_penalty,
-                        device_name=device_name,
-                    )
-                st.subheader("Generated Output")
-                st.text_area("Result", value=generated, height=220)
+    st.markdown(
+        f"""
+        <div class="model-pill">
+            <strong>Model:</strong> {model_folder_name} &nbsp; | &nbsp; <strong>Parameters:</strong> {model_params_text}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with col2:
-        st.subheader("Current Hyperparameters")
-        st.write(f"Model folder: {Path(export_dir).name if export_dir else 'N/A'}")
-        st.write(f"Device: {device_name}")
-        st.write(f"Max new tokens: {max_new_tokens}")
-        st.write(f"Temperature: {temperature:.2f}")
-        st.write(f"Top-k: {top_k}")
-        st.write(f"Top-p: {top_p:.2f}")
-        st.write(f"Repetition penalty: {repetition_penalty:.2f}")
+    prompt = st.text_area(
+        "Prompt",
+        value="### Instruction:\nWhat is machine learning?\n\n### Response:\n",
+        height=170,
+    )
+    generate_clicked = st.button("Generate Text", type="primary", use_container_width=True)
 
-        st.subheader("Quick Guide")
-        st.caption("Lower temperature gives safer output; higher gives more creative output.")
-        st.caption("Top-k and top-p control how many candidate tokens are sampled.")
-
-        st.subheader("Run Command")
-        st.code("streamlit run streamlit_app.py", language="bash")
-        st.info("UI is intentionally minimal for demo use.")
+    if generate_clicked:
+        if not export_dir:
+            st.warning("Select a trained model folder from the sidebar.")
+        elif not prompt.strip():
+            st.warning("Enter a prompt before generating text.")
+        else:
+            with st.spinner("Generating text..."):
+                generated = generate_text(
+                    prompt=prompt,
+                    export_dir=export_dir,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    repetition_penalty=repetition_penalty,
+                    device_name=device_name,
+                )
+            st.subheader("Generated Output")
+            st.text_area("Result", value=generated, height=260)
 
 
 if __name__ == "__main__":
