@@ -1,1 +1,1 @@
-"# mini-gpt-from-scratch" 
+# mini-gpt-from-scratch
