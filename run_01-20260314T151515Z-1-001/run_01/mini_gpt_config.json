@@ -1,0 +1,8 @@
+{
+  "vocab_size": 8000,
+  "context_length": 128,
+  "embedding_dim": 256,
+  "num_heads": 4,
+  "num_layers": 4,
+  "dropout": 0.1
+}
