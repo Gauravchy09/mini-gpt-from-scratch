@@ -60,15 +60,15 @@ def infer_model_label(path: Path, kind: str) -> str:
     lower_name = path.name.lower()
 
     if kind == "checkpoint" and "shakes" in lower_name:
-        return "Shakespeare Generator"
+        return "Shakespeare Model"
 
     if kind == "export":
         if path.name == "run_03":
-            return "Q&A Assistant"
+            return "QA Model"
         if path.name == "run_01":
-            return "Story Teller"
+            return "Story Model"
         if path.name == "run_02":
-            return "Base Text Model"
+            return "Base Model"
 
     return path.stem if kind == "checkpoint" else path.name
 
