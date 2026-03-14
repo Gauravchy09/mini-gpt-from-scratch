@@ -276,6 +276,72 @@ The UI lets you:
 
 Before using the UI, run training at least once so `tokenizer/vocab.json` and a checkpoint file exist.
 
+## Notebook-Aligned Runtime (Deployment)
+
+If you trained in Colab/Kaggle and exported artifacts like:
+
+- `run_02-.../run_02/mini_gpt_state.pt`
+- `run_02-.../run_02/mini_gpt_config.json`
+- `run_02-.../run_02/tokenizer/tokenizer.json`
+
+this repository now includes a notebook-aligned runtime:
+
+- `model/notebook_model.py`
+- `infrence/runtime.py`
+- `inference/notebook_generate.py`
+- `training/notebook_profile.py`
+- `api/index.py`
+
+### Streamlit Entry Point
+
+```bash
+streamlit run streamlit_app.py
+```
+
+or:
+
+```bat
+scripts\run_streamlit_frontend.bat
+```
+
+```bash
+./scripts/run_streamlit_frontend.sh
+```
+
+### Vercel Entry Point
+
+The API entrypoint is `api/index.py` with routing defined in `vercel.json`.
+
+Local API test:
+
+```bash
+python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 --reload
+```
+
+or:
+
+```bat
+scripts\run_api_local.bat
+```
+
+Vercel local dev:
+
+```bash
+vercel dev
+```
+
+or:
+
+```bat
+scripts\run_vercel_dev.bat
+```
+
+### Notebook Export Inference (CLI)
+
+```bash
+python inference/notebook_generate.py --prompt "When the astronaut landed on Mars, she discovered"
+```
+
 ## Configuration Files
 
 ### `configs/model_config.yaml`
