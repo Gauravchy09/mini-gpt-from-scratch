@@ -312,10 +312,18 @@ scripts\run_streamlit_frontend.bat
 
 The API entrypoint is `api/index.py` with routing defined in `vercel.json`.
 
-Local API test:
+Important deployment note:
+
+- Vercel should run in **proxy mode** (lightweight API), not local PyTorch inference.
+- Set environment variable `MODEL_API_URL` in Vercel Project Settings.
+- `MODEL_API_URL` must point to a running backend that exposes `POST /generate`.
+
+This avoids Vercel build/runtime failures caused by packaging large model files and heavy ML dependencies.
+
+Local API test (local inference mode):
 
 ```bash
-python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 --reload
+ENABLE_LOCAL_INFERENCE=1 python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 or:

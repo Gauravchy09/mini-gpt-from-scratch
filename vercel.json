@@ -2,7 +2,9 @@
   "version": 2,
   "functions": {
     "api/index.py": {
-      "runtime": "python3.11"
+      "runtime": "python3.11",
+      "maxDuration": 30,
+      "excludeFiles": "{venv/**,.venv/**,__pycache__/**,.pytest_cache/**,notebooks/**,experiments/**,run_*/**,*.ipynb}"
     }
   },
   "routes": [

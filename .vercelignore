@@ -1,0 +1,8 @@
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+notebooks/
+experiments/
+run_*/
+*.ipynb

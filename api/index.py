@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
-
-from infrence.runtime import find_export_dirs, generate_from_export, pick_default_export
 
 
 class GenerateRequest(BaseModel):
@@ -27,7 +27,18 @@ class GenerateRequest(BaseModel):
 app = FastAPI(title="Mini-GPT API", version="1.0.0")
 
 
-def _resolve_export_dir(user_export_dir: str | None) -> Path:
+def _is_local_inference_enabled() -> bool:
+    return os.getenv("ENABLE_LOCAL_INFERENCE", "0") == "1"
+
+
+def _backend_url() -> str:
+    return os.getenv("MODEL_API_URL", "").strip().rstrip("/")
+
+
+def _resolve_local_export_dir(user_export_dir: str | None) -> Path:
+    # Import lazily so Vercel deploy does not require torch/tokenizers.
+    from infrence.runtime import find_export_dirs, pick_default_export
+
     if user_export_dir:
         chosen = Path(user_export_dir)
         if not chosen.is_absolute():
@@ -43,25 +54,64 @@ def _resolve_export_dir(user_export_dir: str | None) -> Path:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"service": "mini-gpt-api", "status": "ok"}
+    mode = "proxy" if _backend_url() else ("local" if _is_local_inference_enabled() else "disabled")
+    return {"service": "mini-gpt-api", "status": "ok", "mode": mode}
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "healthy"}
+    mode = "proxy" if _backend_url() else ("local" if _is_local_inference_enabled() else "disabled")
+    return {"status": "healthy", "mode": mode}
 
 
 @app.get("/exports")
 def exports() -> dict[str, list[str]]:
+    if not _is_local_inference_enabled():
+        return {"export_dirs": []}
+
+    from infrence.runtime import find_export_dirs
+
     export_dirs = [str(path) for path in find_export_dirs(ROOT_DIR)]
     return {"export_dirs": export_dirs}
 
 
 @app.post("/generate")
 def generate(req: GenerateRequest) -> dict[str, str]:
+    backend = _backend_url()
+
+    if backend:
+        # Vercel-friendly mode: proxy request to external inference service.
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    f"{backend}/generate",
+                    json=req.model_dump(),
+                    headers={"Content-Type": "application/json"},
+                )
+            response.raise_for_status()
+            payload = response.json()
+            return {
+                "export_dir": str(payload.get("export_dir", "remote")),
+                "prompt": req.prompt,
+                "generated_text": str(payload.get("generated_text", "")),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to reach MODEL_API_URL backend: {exc}") from exc
+
+    if not _is_local_inference_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No inference backend configured. Set MODEL_API_URL for proxy mode on Vercel, "
+                "or set ENABLE_LOCAL_INFERENCE=1 for local torch inference."
+            ),
+        )
+
     try:
-        export_dir = _resolve_export_dir(req.export_dir)
-        output = generate_from_export(
+        from infrence.runtime import generate_from_export
+
+        export_dir = _resolve_local_export_dir(req.export_dir)
+        generated_text = generate_from_export(
             export_dir=export_dir,
             prompt=req.prompt,
             max_new_tokens=req.max_new_tokens,
@@ -77,5 +127,5 @@ def generate(req: GenerateRequest) -> dict[str, str]:
     return {
         "export_dir": str(export_dir),
         "prompt": req.prompt,
-        "generated_text": output,
+        "generated_text": generated_text,
     }
