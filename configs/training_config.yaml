@@ -1,0 +1,10 @@
+seed: 42
+batch_size: 32
+learning_rate: 0.0003
+epochs: 5
+eval_interval: 200
+log_interval: 50
+grad_clip: 1.0
+train_split: 0.9
+device: auto
+max_steps_per_epoch: null
